@@ -1,0 +1,122 @@
+# Gateway e VirtualService para ArgoCD
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: argocd-gateway
+  namespace: argocd
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "argocd.fintech.internal"
+    tls:
+      mode: SIMPLE
+      credentialName: argocd-tls-certificate
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  hosts:
+  - "argocd.fintech.internal"
+  gateways:
+  - argocd-gateway
+  http:
+  - route:
+    - destination:
+        host: argocd-server
+        port:
+          number: 443
+    headers:
+      request:
+        set:
+          X-Forwarded-Proto: https
+---
+# Configurações para ArgoCD
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  # Configuração OIDC para SSO
+  url: https://argocd.fintech.internal
+  dex.config: |
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: $dex.github.clientID
+          clientSecret: $dex.github.clientSecret
+          orgs:
+          - name: fintech-company
+  # RBAC de segurança reforçada
+  rbac.default.policy: 'role:readonly'
+  # Repositories pré-configurados
+  repositories: |
+    - url: https://github.com/fintech-company/gitops-config.git
+      type: git
+      passwordSecret:
+        name: repo-credentials
+        key: password
+      usernameSecret:
+        name: repo-credentials
+        key: username
+    - url: https://github.com/fintech-company/microservices.git
+      type: git
+      passwordSecret:
+        name: repo-credentials
+        key: password
+      usernameSecret:
+        name: repo-credentials
+        key: username
+---
+# Configurações de segurança avançadas
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  server.insecure: "false"
+  server.disable.auth: "false"
+  server.enable.gzip: "true"
+  server.x.frame.options: "sameorigin"
+  controller.status.processors: "20"
+  controller.operation.processors: "10"
+  # Habilitar métricas de segurança
+  server.metrics.enabled: "true"
+  repo.server.timeout.seconds: "300"
+# NOTA: O recurso Application abaixo deve ser aplicado DEPOIS que os CRDs do ArgoCD estiverem instalados
+# Remova este recurso desta aplicação inicial e aplique-o separadamente após a instalação dos CRDs
+# ---
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: argocd
+#   namespace: argocd
+#   finalizers:
+#     - resources-finalizer.argocd.argoproj.io
+# spec:
+#   project: default
+#   source:
+#     repoURL: https://github.com/fintech-company/gitops-config.git
+#     targetRevision: HEAD
+#     path: argocd
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: argocd
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#     syncOptions:
+#     - CreateNamespace=true 

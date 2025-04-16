@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fintech-app
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/refresh: "normal"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: fintech-app
+  source:
+    repoURL: https://github.com/fintech-organization/fintech-app.git
+    targetRevision: HEAD
+    path: kubernetes/manifests
+    directory:
+      recurse: true
+      exclude: '{testing/**,*.md}'
+    plugin:
+      name: kustomize
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fintech-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - Validate=true
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/metrics
+  info:
+    - name: Ownership
+      value: "Financial Technology Team"
+    - name: Environment
+      value: "Production"
+    - name: Security Level
+      value: "High" 

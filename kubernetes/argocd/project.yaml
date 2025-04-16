@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fintech-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Fintech application project
+  
+  # Source repositories that applications within this project can pull manifests from
+  sourceRepos:
+    - "https://github.com/yourusername/fintech-app.git"
+    - "https://github.com/yourusername/fintech-infra.git"
+  
+  # Destination clusters and namespaces that applications within this project can deploy to
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: fintech-app
+    - server: https://kubernetes.default.svc
+      namespace: fintech-monitoring
+    - server: https://kubernetes.default.svc
+      namespace: fintech-security
+  
+  # Allowed resource kinds that applications within this project can deploy
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: "storage.k8s.io"
+      kind: StorageClass
+  
+  # Denied resource kinds that applications within this project cannot deploy
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  
+  # Permitted resource kinds within specified namespaces
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  
+  # Roles that grant access to this project
+  roles:
+    - name: admin
+      description: Admin role for fintech application
+      policies:
+        - p, proj:fintech-app:admin, applications, *, fintech-app/*, allow
+      groups:
+        - fintech-admins
+    
+    - name: readonly
+      description: Read-only role for fintech application
+      policies:
+        - p, proj:fintech-app:readonly, applications, get, fintech-app/*, allow
+      groups:
+        - fintech-viewers
+  
+  # Sync windows to restrict when syncs can occur
+  syncWindows:
+    - kind: allow
+      schedule: "* 10-18 * * mon-fri"
+      duration: 8h
+      applications:
+        - "*"
+      namespaces:
+        - fintech-app
+      clusters:
+        - "*"
+    
+    - kind: deny
+      schedule: "* * * * sat,sun"
+      duration: 48h
+      applications:
+        - "*"
+      namespaces:
+        - fintech-app
+      clusters:
+        - "*"
+      manualSync: true 

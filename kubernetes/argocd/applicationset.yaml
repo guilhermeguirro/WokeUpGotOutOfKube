@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: fintech-services
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/yourusername/fintech-app.git
+        revision: HEAD
+        directories:
+          - path: kubernetes/manifests/*
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/yourusername/fintech-app.git
+              revision: HEAD
+              files:
+                - path: "environments/*.yaml"
+          - list:
+              elements:
+                - cluster: production
+                  url: https://kubernetes.default.svc
+                - cluster: staging
+                  url: https://kubernetes.default.svc
+  template:
+    metadata:
+      name: '{{path.basename}}-{{cluster}}'
+      labels:
+        environment: '{{cluster}}'
+    spec:
+      project: fintech-app
+      source:
+        repoURL: https://github.com/yourusername/fintech-app.git
+        targetRevision: HEAD
+        path: '{{path}}'
+        helm:
+          valueFiles:
+            - '../../environments/{{cluster}}/values.yaml'
+            - 'values.yaml'
+          parameters:
+            - name: environment
+              value: '{{cluster}}'
+      destination:
+        server: '{{url}}'
+        namespace: 'fintech-{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 3
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m 

@@ -1,0 +1,181 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-network-policy
+  annotations:
+    policies.kyverno.io/title: Require Network Policy
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      Cada namespace deve ter pelo menos uma NetworkPolicy definida para controlar
+      o tráfego de rede entre os pods. Esta política garante que todo tráfego seja
+      explicitamente permitido ao invés de implicitamente aberto.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: check-network-policy-exists
+      match:
+        resources:
+          kinds:
+            - Namespace
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - cert-manager
+            - monitoring
+      validate:
+        message: "Cada namespace deve ter pelo menos uma NetworkPolicy"
+        podSecurity:
+          level: restricted
+        deny:
+          conditions:
+            - key: "{{ request.object.metadata.name }}"
+              operator: AnyNotIn
+              value: "{{ namespaceHasNetworkPolicy(request.object.metadata.name) }}"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-default-deny-policy
+  annotations:
+    policies.kyverno.io/title: Validate Default Deny Policy
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: NetworkPolicy
+    policies.kyverno.io/description: >-
+      As NetworkPolicies seguem o conceito de "default deny" para tráfego de entrada e saída.
+      Esta política verifica se cada namespace tem uma NetworkPolicy que nega todo o tráfego
+      por padrão, exigindo políticas explícitas para permitir comunicações.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: validate-default-deny
+      match:
+        resources:
+          kinds:
+            - NetworkPolicy
+      validate:
+        message: "Cada namespace deve ter uma NetworkPolicy de 'default deny' para ingress e egress"
+        pattern:
+          spec:
+            policyTypes:
+              - Ingress
+              - Egress
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-external-ips
+  annotations:
+    policies.kyverno.io/title: Restrict External IPs
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Service
+    policies.kyverno.io/description: >-
+      Evita o uso de IPs externos em serviços para mitigar ataques de spoofing.
+      Serviços não devem especificar externalIPs a menos que sejam explicitamente permitidos.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: check-external-ips
+      match:
+        resources:
+          kinds:
+            - Service
+      validate:
+        message: "Serviços não podem especificar externalIPs"
+        pattern:
+          spec:
+            ?(externalIPs): null
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-service-types
+  annotations:
+    policies.kyverno.io/title: Restrict Service Types
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Service
+    policies.kyverno.io/description: >-
+      Esta política restringe os tipos de serviço que podem ser criados.
+      NodePort é proibido e LoadBalancer é restrito a namespaces específicos.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: restrict-nodeport
+      match:
+        resources:
+          kinds:
+            - Service
+      validate:
+        message: "Serviços do tipo NodePort são proibidos"
+        pattern:
+          spec:
+            type: "!NodePort"
+    
+    - name: restrict-loadbalancer
+      match:
+        resources:
+          kinds:
+            - Service
+      exclude:
+        resources:
+          namespaces:
+            - ingress-nginx
+            - istio-system
+            - frontend
+      validate:
+        message: "Serviços LoadBalancer são restritos a namespaces específicos"
+        pattern:
+          spec:
+            type: "!LoadBalancer"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-pod-probes
+  annotations:
+    policies.kyverno.io/title: Validate Pod Probes
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Garante que os pods tenham probes de liveness e readiness configurados.
+      Isto melhora a disponibilidade e a confiabilidade do sistema, e evita
+      problemas de rede causados por pods não-responsivos.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: check-probes
+      match:
+        resources:
+          kinds:
+            - Pod
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+      validate:
+        message: "Pods devem definir probes de liveness e readiness"
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                livenessProbe:
+                  {}
+                readinessProbe:
+                  {} 

@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: security
+
+resources:
+  - gatekeeper/
+  - falco/
+  - kyverno/
+  - cert-manager/
+  - vault/
+
+commonLabels:
+  app.kubernetes.io/part-of: security-stack
+  security.fintech.com/compliance-required: "true"
+
+patches:
+  - path: patches/resource-limits.yaml
+    target:
+      kind: Deployment
+  - path: patches/pod-security.yaml
+    target:
+      kind: Pod
+
+configMapGenerator:
+  - name: security-policy-config
+    literals:
+      - POLICY_ENFORCE_LEVEL=high
+      - ENABLE_AUDIT_LOGS=true
+      - SCAN_INTERVAL=4h
+
+secretGenerator:
+  - name: security-credentials
+    envs:
+      - secrets/credentials.env
+
+images:
+  - name: gatekeeper
+    newName: openpolicyagent/gatekeeper
+    newTag: v3.13.0
+  - name: falco
+    newName: falcosecurity/falco
+    newTag: 0.36.2
+  - name: kyverno
+    newName: ghcr.io/kyverno/kyverno
+    newTag: v1.11.0
+  - name: vault
+    newName: hashicorp/vault
+    newTag: 1.15.2 

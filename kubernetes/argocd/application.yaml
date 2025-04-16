@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fintech-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: fintech-api
+    environment: production
+spec:
+  project: fintech-app
+  source:
+    repoURL: https://github.com/yourusername/fintech-app.git
+    targetRevision: HEAD
+    path: kubernetes/manifests
+    directory:
+      recurse: true
+      jsonnet:
+        extVars:
+          - name: env
+            value: production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fintech-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/metrics
+    - group: ""
+      kind: ConfigMap
+      jsonPointers:
+        - /data/cache.timeout
+  info:
+    - name: Security Status
+      value: "https://sonarqube.example.com/dashboard?id=fintech-app"
+    - name: Documentation
+      value: "https://confluence.example.com/display/FINTECH"
+
+# NOTA: Este arquivo deve ser aplicado DEPOIS que os CRDs do ArgoCD estiverem instalados
+# kubectl apply -f application.yaml 

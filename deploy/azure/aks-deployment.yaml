@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-deployment-config
+  namespace: default
+data:
+  template: |
+    resource "azurerm_resource_group" "fintech_rg" {
+      name     = "fintech-devsecops-rg"
+      location = "eastus2"
+      tags = {
+        environment = "production"
+        project     = "fintech-app"
+        compliance  = "pci-dss"
+      }
+    }
+
+    resource "azurerm_virtual_network" "fintech_vnet" {
+      name                = "fintech-vnet"
+      resource_group_name = azurerm_resource_group.fintech_rg.name
+      location            = azurerm_resource_group.fintech_rg.location
+      address_space       = ["10.0.0.0/16"]
+    }
+
+    resource "azurerm_subnet" "aks_subnet" {
+      name                 = "aks-subnet"
+      resource_group_name  = azurerm_resource_group.fintech_rg.name
+      virtual_network_name = azurerm_virtual_network.fintech_vnet.name
+      address_prefixes     = ["10.0.1.0/24"]
+    }
+
+    resource "azurerm_subnet" "app_gw_subnet" {
+      name                 = "app-gw-subnet"
+      resource_group_name  = azurerm_resource_group.fintech_rg.name
+      virtual_network_name = azurerm_virtual_network.fintech_vnet.name
+      address_prefixes     = ["10.0.2.0/24"]
+    }
+
+    resource "azurerm_log_analytics_workspace" "fintech_logs" {
+      name                = "fintech-logs-workspace"
+      resource_group_name = azurerm_resource_group.fintech_rg.name
+      location            = azurerm_resource_group.fintech_rg.location
+      sku                 = "PerGB2018"
+      retention_in_days   = 30
+    }
+
+    resource "azurerm_key_vault" "fintech_kv" {
+      name                = "fintech-kv"
+      resource_group_name = azurerm_resource_group.fintech_rg.name
+      location            = azurerm_resource_group.fintech_rg.location
+      tenant_id           = data.azurerm_client_config.current.tenant_id
+      sku_name            = "premium"
+
+      purge_protection_enabled   = true
+      soft_delete_retention_days = 90
+    }
+
+    resource "azurerm_kubernetes_cluster" "fintech_aks" {
+      name                = "fintech-cluster"
+      resource_group_name = azurerm_resource_group.fintech_rg.name
+      location            = azurerm_resource_group.fintech_rg.location
+      dns_prefix          = "fintech-k8s"
+      kubernetes_version  = "1.29.0"
+
+      default_node_pool {
+        name                = "appnodes"
+        vm_size             = "Standard_D4s_v3"
+        availability_zones  = ["1", "2", "3"]
+        enable_auto_scaling = true
+        min_count           = 3
+        max_count           = 10
+        vnet_subnet_id      = azurerm_subnet.aks_subnet.id
+        node_labels = {
+          "role" = "app"
+        }
+      }
+
+      network_profile {
+        network_plugin    = "azure"
+        network_policy    = "calico"
+        load_balancer_sku = "standard"
+        service_cidr      = "10.0.10.0/24"
+        dns_service_ip    = "10.0.10.10"
+      }
+
+      identity {
+        type = "SystemAssigned"
+      }
+
+      addon_profile {
+        azure_policy {
+          enabled = true
+        }
+
+        oms_agent {
+          enabled                    = true
+          log_analytics_workspace_id = azurerm_log_analytics_workspace.fintech_logs.id
+        }
+
+        kube_dashboard {
+          enabled = false
+        }
+      }
+
+      role_based_access_control {
+        enabled = true
+        azure_active_directory {
+          managed            = true
+          azure_rbac_enabled = true
+        }
+      }
+
+      sku_tier = "Standard"
+
+      tags = {
+        environment = "production"
+        project     = "fintech-app"
+      }
+    }
+
+    resource "azurerm_kubernetes_cluster_node_pool" "security_pool" {
+      name                  = "secnodes"
+      kubernetes_cluster_id = azurerm_kubernetes_cluster.fintech_aks.id
+      vm_size               = "Standard_D8s_v3"
+      availability_zones    = ["1", "2", "3"]
+      enable_auto_scaling   = true
+      min_count             = 2
+      max_count             = 3
+      vnet_subnet_id        = azurerm_subnet.aks_subnet.id
+
+      node_labels = {
+        "role" = "security"
+      }
+
+      node_taints = [
+        "security=true:NoSchedule"
+      ]
+
+      tags = {
+        environment = "production"
+        project     = "fintech-app"
+      }
+    }
+
+    resource "azurerm_application_gateway" "app_gateway" {
+      name                = "fintech-app-gateway"
+      resource_group_name = azurerm_resource_group.fintech_rg.name
+      location            = azurerm_resource_group.fintech_rg.location
+
+      sku {
+        name     = "WAF_v2"
+        tier     = "WAF_v2"
+        capacity = 2
+      }
+
+      gateway_ip_configuration {
+        name      = "gateway-ip-config"
+        subnet_id = azurerm_subnet.app_gw_subnet.id
+      }
+
+      frontend_port {
+        name = "http-port"
+        port = 80
+      }
+
+      frontend_port {
+        name = "https-port"
+        port = 443
+      }
+
+      frontend_ip_configuration {
+        name                 = "frontend-ip-config"
+        public_ip_address_id = azurerm_public_ip.app_gw_ip.id
+      }
+
+      waf_configuration {
+        enabled                  = true
+        firewall_mode            = "Prevention"
+        rule_set_type            = "OWASP"
+        rule_set_version         = "3.2"
+        file_upload_limit_mb     = 100
+        request_body_check       = true
+        max_request_body_size_kb = 128
+      }
+
+      identity {
+        type = "UserAssigned"
+        identity_ids = [
+          azurerm_user_assigned_identity.app_gw_identity.id
+        ]
+      }
+
+      ssl_policy {
+        policy_type = "Predefined"
+        policy_name = "AppGwSslPolicy20220101"
+      }
+    }
+
+    output "aks_id" {
+      value = azurerm_kubernetes_cluster.fintech_aks.id
+    }
+
+    output "aks_fqdn" {
+      value = azurerm_kubernetes_cluster.fintech_aks.fqdn
+    }
+
+    output "aks_kubelet_identity" {
+      value = azurerm_kubernetes_cluster.fintech_aks.kubelet_identity[0].object_id
+    }
+
+    output "app_gateway_id" {
+      value = azurerm_application_gateway.app_gateway.id
+    } 

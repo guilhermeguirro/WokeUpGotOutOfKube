@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/refresh: "normal"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/fintech-organization/infrastructure.git
+    targetRevision: HEAD
+    path: kubernetes/monitoring
+    helm:
+      valueFiles:
+        - values-${values.global.environment}.yaml
+      parameters:
+        - name: clusterName
+          value: ${values.global.clusterName}
+        - name: alertmanager.enabled
+          value: "true"
+        - name: grafana.adminPassword
+          value: ${secrets.grafana.adminPassword}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 2m
+  revisionHistoryLimit: 5
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/replicas
+  info:
+    - name: Ownership
+      value: "SRE Team"
+    - name: Priority
+      value: "High" 

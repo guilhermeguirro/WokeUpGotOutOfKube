@@ -1,0 +1,29 @@
+# Snyk (.snyk) policy file
+version: v1.25.0
+
+# Ignores vulnerabilities until expiry date; change duration by modifying expiry date
+ignore:
+  SNYK-JS-AXIOS-1038255:
+    - '*':
+        reason: 'Not using axios with SSRF vectors'
+        expires: 2025-06-15T00:00:00.000Z
+        created: 2025-04-15T00:00:00.000Z
+  SNYK-JS-LODASH-590103:
+    - '*':
+        reason: 'Internal tooling only, no user input'
+        expires: 2025-06-15T00:00:00.000Z
+        created: 2025-04-15T00:00:00.000Z
+
+# Patch vulnerabilities that cannot be upgraded
+patch:
+  SNYK-JS-LODASH-567746:
+    - lodash:
+        patched: '2025-04-15T12:00:00.000Z'
+
+# Exclude paths from scanning
+exclude:
+  global:
+    - node_modules/**
+    - test/**
+    - tests/**
+    - examples/**

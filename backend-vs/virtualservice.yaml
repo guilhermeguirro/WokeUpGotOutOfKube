@@ -1,0 +1,63 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: api-vs
+  namespace: backend
+spec:
+  hosts:
+  - "api.fintech.com"
+  gateways:
+  - istio-system/fintech-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /v1
+    route:
+    - destination:
+        host: api-service
+        port:
+          number: 8080
+    headers:
+      response:
+        set:
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+          X-Content-Type-Options: "nosniff"
+          Cache-Control: "no-store"
+          X-XSS-Protection: "1; mode=block"
+    corsPolicy:
+      allowOrigins:
+      - exact: "https://app.fintech.com"
+      - exact: "https://www.fintech.com"
+      allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+      allowHeaders:
+      - Authorization
+      - Content-Type
+      maxAge: "24h"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: api-dr
+  namespace: backend
+spec:
+  host: api-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 3s
+      http:
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s 

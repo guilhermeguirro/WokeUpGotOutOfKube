@@ -1,0 +1,144 @@
+server:
+  replicas: 2
+  
+  # Enable SSL for ArgoCD server
+  extraArgs:
+    - --insecure=false
+  
+  # Configure TLS settings
+  certificate:
+    enabled: true
+    domain: argocd.fintech-app.com
+    secretName: argocd-server-tls
+  
+  # RBAC settings
+  rbacConfig:
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:org-admin, applications, *, */*, allow
+      p, role:org-admin, clusters, *, *, allow
+      p, role:org-admin, repositories, *, *, allow
+      p, role:org-admin, projects, *, *, allow
+      g, fintech-admins, role:org-admin
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  # Pod security context
+  securityContext:
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+
+# Enable Dex for SSO
+dex:
+  enabled: true
+  
+  # Configure OIDC provider 
+  config:
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: $GITHUB_CLIENT_ID
+          clientSecret: $GITHUB_CLIENT_SECRET
+          orgs:
+          - name: fintech-org
+
+# Controller settings
+controller:
+  replicas: 2
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Redis settings  
+redis:
+  # Use external Redis for HA
+  externalRedis:
+    host: redis-master.redis.svc.cluster.local
+    port: 6379
+  
+  # Enable TLS for Redis
+  tls:
+    enabled: true
+    secretName: argocd-redis-tls
+
+# Repository server
+repoServer:
+  replicas: 2
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  # Enable additional volume mounts for gpg keys and credentials
+  volumes:
+    - name: custom-tools
+      emptyDir: {}
+    - name: gpg-keys
+      secret:
+        secretName: argocd-gpg-keys
+
+  volumeMounts:
+    - name: custom-tools
+      mountPath: /custom-tools
+    - name: gpg-keys
+      mountPath: /app/config/gpg/keys
+
+# Global security settings
+global:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+  
+  # Network policies  
+  networkPolicy:
+    enabled: true
+    defaultDeny: true
+  
+  # Add extra environment variables
+  env:
+    - name: ARGOCD_GPG_ENABLED
+      value: "true"
+    - name: ARGOCD_EXEC_TIMEOUT
+      value: "180s"
+
+# Add custom metrics and monitoring
+prometheus:
+  enabled: true
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8082"
+
+# Add application sets for gitops automation
+applicationset:
+  enabled: true
+  
+  # Resource limits for ApplicationSet controller
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi 

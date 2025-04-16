@@ -1,0 +1,33 @@
+# .checkov.yaml
+branch: master
+check:
+  # Enable all security checks 
+  - ALL
+  
+download-external-modules: true
+evaluate-variables: true
+
+# Skip checks that are not relevant for this project
+skip-check:
+  - CKV_AWS_115  # Skip check for requiring MFA for the 'root' user account
+  - CKV_AWS_116  # Skip check for requiring MFA for all IAM users that have a console password
+  - CKV_DOCKER_2 # Skip 'healthcheck' check for Docker
+
+framework:
+  - terraform
+  - kubernetes
+  - dockerfile
+  - cloudformation
+
+# Output formats
+output:
+  - cli
+  - json
+  - junitxml
+  - sarif
+
+quiet: false
+compact: false
+soft-fail: false
+run-all-external-modules: false
+summary-position: top 

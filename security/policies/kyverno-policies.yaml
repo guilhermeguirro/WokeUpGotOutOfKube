@@ -1,0 +1,231 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-probes
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - gatekeeper-system
+    validate:
+      message: "Both readinessProbe and livenessProbe are required"
+      pattern:
+        spec:
+          containers:
+          - readinessProbe: "?*"
+            livenessProbe: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: privileged-containers
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - istio-system
+    validate:
+      message: "Privileged containers are not allowed"
+      pattern:
+        spec:
+          containers:
+          - =(securityContext):
+              =(privileged): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-network
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: host-network-ports
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - istio-system
+    validate:
+      message: "Host network and ports are not allowed"
+      pattern:
+        spec:
+          =(hostNetwork): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resources
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-resources
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+    validate:
+      message: "CPU and memory resources are required"
+      pattern:
+        spec:
+          containers:
+          - resources:
+              limits:
+                cpu: "?*"
+                memory: "?*"
+              requests:
+                cpu: "?*"
+                memory: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-user
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-userid
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - istio-system
+    validate:
+      message: "Running as root is not allowed"
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              runAsNonRoot: true
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-service-type
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: service-type
+    match:
+      resources:
+        kinds:
+        - Service
+    validate:
+      message: "Service type NodePort is not allowed"
+      pattern:
+        spec:
+          type: "!NodePort"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-labels
+    match:
+      resources:
+        kinds:
+        - Pod
+        - Service
+        - Deployment
+        - StatefulSet
+    validate:
+      message: "Required labels are missing"
+      pattern:
+        metadata:
+          labels:
+            app.kubernetes.io/name: "?*"
+            app.kubernetes.io/instance: "?*"
+            app.kubernetes.io/version: "?*"
+            app.kubernetes.io/component: "?*"
+            app.kubernetes.io/part-of: "?*"
+            app.kubernetes.io/managed-by: "?*"
+            security.fintech.io/scanned: "true"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-capabilities
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-capabilities
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - istio-system
+    validate:
+      message: "Adding capabilities is not allowed. All capabilities must be dropped."
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              capabilities:
+                drop: ["ALL"]
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-seccomp
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: check-seccomp
+    match:
+      resources:
+        kinds:
+        - Pod
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+    validate:
+      message: "Seccomp profile must be specified"
+      pattern:
+        spec:
+          securityContext:
+            seccompProfile:
+              type: "RuntimeDefault" 

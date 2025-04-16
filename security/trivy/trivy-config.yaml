@@ -1,0 +1,38 @@
+# Trivy scanner configuration
+exit-code: 1  # Exit code when vulnerabilities were found
+exit-on-eol: true  # Exit when the OS is EOL (End of Life)
+timeout: 5m0s  # Scan timeout
+severity: CRITICAL,HIGH  # Severities of vulnerabilities to be displayed
+
+# Format and report configs
+format: table  # Output format
+output: trivy-results.json  # Output file name when format is JSON
+list-all-pkgs: false  # Output all packages regardless of vulnerability
+
+# Cache settings
+cache-dir: /home/user/.cache/trivy  # Cache directory
+clear-cache: false  # Clear image caches without scanning
+
+# Vulnerability configs
+vuln-type: os,library  # Scan for both OS vulns and lang-specific packages 
+ignored-unfixed: true  # Ignore unfixed vulnerabilities
+security-checks: vuln,config,secret  # Check for vulnerabilities, misconfigurations, and secrets
+
+# For Kubernetes scanning
+k8s-namespace: ""  # Scan a specific namespace in Kubernetes
+k8s-all-namespaces: true  # Scan all namespaces in Kubernetes
+
+# Miscellaneous options
+skip-dirs:
+  - tests/
+  - docs/
+  - examples/
+
+# Ignored CVEs (when remediation is not possible)
+ignore:
+  - id: CVE-2023-12345
+    until: 2025-12-31
+    reason: "No remediation available from vendor yet"
+  - id: CVE-2023-67890
+    until: 2025-12-31
+    reason: "False positive for our implementation" 

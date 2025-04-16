@@ -1,0 +1,67 @@
+global:
+  enabled: true
+  tlsDisable: true
+
+injector:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+server:
+  # Use dev mode temporarily for simplicity (NOT for production)
+  dev:
+    enabled: true
+    devRootToken: "root"
+  
+  # Disable standalone mode since we're using dev mode
+  standalone:
+    enabled: false
+    config: |
+      ui = true
+      
+      listener "tcp" {
+        tls_disable = 1
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+      }
+      
+      storage "file" {
+        path = "/vault/data"
+      }
+
+  # Set resource limits
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  
+  # Disable persistent storage for now
+  dataStorage:
+    enabled: false
+  
+  # Configure a service
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+  
+  # Configure security settings
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    runAsGroup: 1000
+    fsGroup: 1000
+
+ui:
+  enabled: true
+  serviceType: ClusterIP 

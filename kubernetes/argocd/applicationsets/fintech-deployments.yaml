@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: fintech-deployments
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/fintech-organization/fintech-app.git
+        revision: HEAD
+        directories:
+          - path: kubernetes/environments/*
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/fintech-organization/fintech-app.git
+              revision: HEAD
+              files:
+                - path: "config/environments.json"
+          - list:
+              elements:
+                - component: api
+                - component: frontend
+                - component: worker
+                - component: database
+  template:
+    metadata:
+      name: '{{path.basename}}-{{component}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{values.syncWave}}'
+    spec:
+      project: fintech-app
+      source:
+        repoURL: https://github.com/fintech-organization/fintech-app.git
+        targetRevision: HEAD
+        path: 'kubernetes/components/{{component}}'
+        helm:
+          valueFiles:
+            - '../../environments/{{path.basename}}/values.yaml'
+            - '../../environments/{{path.basename}}/{{component}}-values.yaml'
+          parameters:
+            - name: global.environment
+              value: '{{path.basename}}'
+            - name: global.region
+              value: '{{values.region}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'fintech-{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m

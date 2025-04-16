@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fintech-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Financial technology application project
+  
+  # Source repositories that applications within this project can pull manifests from
+  sourceRepos:
+    - https://github.com/fintech-organization/fintech-app.git
+    - https://github.com/fintech-organization/infrastructure.git
+  
+  # Destination clusters and namespaces that applications within this project can deploy to
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: fintech-app
+    - server: https://kubernetes.default.svc
+      namespace: fintech-api
+    - server: https://kubernetes.default.svc
+      namespace: fintech-frontend
+  
+  # Allow any kind to be deployed to the namespaces
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'networking.k8s.io'
+      kind: Ingress
+  
+  # Deny access to network policies
+  namespaceResourceBlacklist:
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+  
+  # Permissions on namespaced objects required for application functioning
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: '*'
+    - group: ''
+      kind: 'Service'
+    - group: ''
+      kind: 'ConfigMap'
+    - group: ''
+      kind: 'Secret'
+    - group: ''
+      kind: 'PersistentVolumeClaim'
+    - group: 'batch'
+      kind: '*'
+    - group: 'autoscaling'
+      kind: 'HorizontalPodAutoscaler'
+    - group: 'policy'
+      kind: 'PodDisruptionBudget'
+    - group: 'cert-manager.io'
+      kind: 'Certificate'
+  
+  # Project roles for RBAC control
+  roles:
+    - name: developer
+      description: Developer role with reduced privileges
+      policies:
+        - p, proj:fintech-app:developer, applications, get, fintech-app/*, allow
+        - p, proj:fintech-app:developer, applications, sync, fintech-app/*, allow
+      groups:
+        - fintech-developers
+    
+    - name: admin
+      description: Admin role with full privileges
+      policies:
+        - p, proj:fintech-app:admin, applications, *, fintech-app/*, allow
+      groups:
+        - fintech-admins
+  
+  # Enable orphaned resources monitoring
+  orphanedResources:
+    warn: true
+    ignore:
+      - kind: ConfigMap
+        name: kube-root-ca.crt 

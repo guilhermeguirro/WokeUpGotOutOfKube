@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: infrastructure
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Core infrastructure components with elevated privileges
+  
+  # Source repositories that applications within this project can pull manifests from
+  sourceRepos:
+    - https://github.com/fintech-organization/infrastructure.git
+    - https://charts.bitnami.com
+    - https://charts.jetstack.io
+    - https://grafana.github.io/helm-charts
+    - https://prometheus-community.github.io/helm-charts
+  
+  # Destination clusters and namespaces that applications within this project can deploy to
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+  
+  # Allow infrastructure components to create cluster-wide resources
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  # No restrictions on namespace resources
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  # Project roles for RBAC control
+  roles:
+    - name: sre
+      description: Site Reliability Engineer role with full privileges
+      policies:
+        - p, proj:infrastructure:sre, applications, *, infrastructure/*, allow
+      groups:
+        - sre-team
+    
+    - name: security-admin
+      description: Security administrator role
+      policies:
+        - p, proj:infrastructure:security-admin, applications, get, infrastructure/security-*, allow
+        - p, proj:infrastructure:security-admin, applications, sync, infrastructure/security-*, allow
+        - p, proj:infrastructure:security-admin, applications, override, infrastructure/security-*, allow
+      groups:
+        - security-team
+  
+  # Enable orphaned resources monitoring with exceptions
+  orphanedResources:
+    warn: true
+    ignore:
+      - kind: ConfigMap
+        name: kube-root-ca.crt
+      - kind: Secret
+        name: sh.helm.release.*
+      - group: admissionregistration.k8s.io
+        kind: ValidatingWebhookConfiguration
+        name: vault-agent-injector-cfg
+      - group: rbac.authorization.k8s.io
+        kind: ClusterRole 

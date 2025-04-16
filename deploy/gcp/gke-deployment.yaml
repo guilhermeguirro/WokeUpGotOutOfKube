@@ -1,0 +1,182 @@
+apiVersion: container.cnrm.cloud.google.com/v1beta1
+kind: ContainerCluster
+metadata:
+  name: fintech-cluster
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+  labels:
+    environment: production
+    project: fintech-app
+    compliance: pci-dss
+spec:
+  location: us-central1
+  initialNodeCount: 1
+  networkingMode: VPC_NATIVE
+  loggingService: logging.googleapis.com/kubernetes
+  monitoringService: monitoring.googleapis.com/kubernetes
+  masterAuthorizedNetworksConfig:
+    cidrBlocks:
+    - cidrBlock: 10.0.0.0/24
+      displayName: office-network
+  networkPolicy:
+    enabled: true
+    provider: CALICO
+  verticalPodAutoscaling:
+    enabled: true
+  binaryAuthorization:
+    enabled: true
+  workloadIdentityConfig:
+    workloadPool: fintech-devsecops-project.svc.id.goog
+  releaseChannel:
+    channel: STABLE
+  privateClusterConfig:
+    enablePrivateEndpoint: false
+    enablePrivateNodes: true
+    masterIpv4CidrBlock: 172.16.0.0/28
+  ipAllocationPolicy:
+    clusterIpv4CidrBlock: /16
+    servicesIpv4CidrBlock: /22
+  nodePools:
+    - name: app-nodes
+      initialNodeCount: 3
+      autoscaling:
+        minNodeCount: 3
+        maxNodeCount: 10
+      management:
+        autoRepair: true
+        autoUpgrade: true
+      nodeConfig:
+        machineType: n2-standard-4
+        diskSizeGb: 100
+        diskType: pd-ssd
+        oauthScopes:
+          - https://www.googleapis.com/auth/cloud-platform
+        labels:
+          role: app
+        shieldedInstanceConfig:
+          enableSecureBoot: true
+          enableIntegrityMonitoring: true
+    - name: security-nodes
+      initialNodeCount: 2
+      autoscaling:
+        minNodeCount: 2
+        maxNodeCount: 5
+      management:
+        autoRepair: true
+        autoUpgrade: true
+      nodeConfig:
+        machineType: n2-standard-8
+        diskSizeGb: 100
+        diskType: pd-ssd
+        oauthScopes:
+          - https://www.googleapis.com/auth/cloud-platform
+        labels:
+          role: security
+        taints:
+          - effect: NO_SCHEDULE
+            key: security
+            value: "true"
+        shieldedInstanceConfig:
+          enableSecureBoot: true
+          enableIntegrityMonitoring: true
+---
+apiVersion: networking.cnrm.cloud.google.com/v1beta1
+kind: ComputeNetwork
+metadata:
+  name: fintech-network
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  autoCreateSubnetworks: false
+  routingMode: REGIONAL
+---
+apiVersion: networking.cnrm.cloud.google.com/v1beta1
+kind: ComputeSubnetwork
+metadata:
+  name: fintech-subnet
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  ipCidrRange: 10.0.0.0/20
+  region: us-central1
+  networkRef:
+    name: fintech-network
+  privateIpGoogleAccess: true
+  secondaryIpRanges:
+    - rangeName: pods
+      ipCidrRange: 10.4.0.0/14
+    - rangeName: services
+      ipCidrRange: 10.8.0.0/20
+  logConfig:
+    aggregationInterval: INTERVAL_5_SEC
+    flowSampling: 0.5
+    metadata: INCLUDE_ALL_METADATA
+---
+apiVersion: networking.cnrm.cloud.google.com/v1beta1
+kind: ComputeRouter
+metadata:
+  name: fintech-router
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  region: us-central1
+  networkRef:
+    name: fintech-network
+---
+apiVersion: networking.cnrm.cloud.google.com/v1beta1
+kind: ComputeRouterNAT
+metadata:
+  name: fintech-nat
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  region: us-central1
+  routerRef:
+    name: fintech-router
+  natIpAllocateOption: AUTO_ONLY
+  sourceSubnetworkIpRangesToNat: ALL_SUBNETWORKS_ALL_IP_RANGES
+  logConfig:
+    enable: true
+    filter: ALL
+---
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMServiceAccount
+metadata:
+  name: fintech-gke-sa
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  displayName: "Fintech GKE Service Account"
+---
+apiVersion: iam.cnrm.cloud.google.com/v1beta1
+kind: IAMPolicyMember
+metadata:
+  name: fintech-gke-sa-binding
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  member: serviceAccount:fintech-gke-sa@fintech-devsecops-project.iam.gserviceaccount.com
+  role: roles/container.nodeServiceAccount
+  resourceRef:
+    apiVersion: resourcemanager.cnrm.cloud.google.com/v1beta1
+    kind: Project
+    external: projects/fintech-devsecops-project
+---
+apiVersion: artifactregistry.cnrm.cloud.google.com/v1beta1
+kind: ArtifactRegistryRepository
+metadata:
+  name: fintech-container-registry
+  namespace: default
+  annotations:
+    cnrm.cloud.google.com/project-id: "fintech-devsecops-project"
+spec:
+  location: us-central1
+  format: DOCKER
+  description: "Container registry for Fintech application images" 

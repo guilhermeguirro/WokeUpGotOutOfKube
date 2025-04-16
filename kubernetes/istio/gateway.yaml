@@ -1,0 +1,234 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: fintech-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "*.fintech.internal"
+    - "api.fintech.com"
+    - "www.fintech.com"
+    - "app.fintech.com"
+    tls:
+      mode: SIMPLE
+      credentialName: fintech-wildcard-cert
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: frontend-vs
+  namespace: frontend
+spec:
+  hosts:
+  - "app.fintech.com"
+  - "www.fintech.com"
+  gateways:
+  - istio-system/fintech-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: frontend-service
+        port:
+          number: 80
+    headers:
+      response:
+        set:
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "DENY"
+          X-XSS-Protection: "1; mode=block"
+          Content-Security-Policy: "default-src 'self'; script-src 'self'; object-src 'none'"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: api-vs
+  namespace: backend
+spec:
+  hosts:
+  - "api.fintech.com"
+  gateways:
+  - istio-system/fintech-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /v1
+    route:
+    - destination:
+        host: api-service
+        port:
+          number: 8080
+    headers:
+      response:
+        set:
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+          X-Content-Type-Options: "nosniff"
+          Cache-Control: "no-store"
+          X-XSS-Protection: "1; mode=block"
+    corsPolicy:
+      allowOrigins:
+      - exact: "https://app.fintech.com"
+      - exact: "https://www.fintech.com"
+      allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+      allowHeaders:
+      - Authorization
+      - Content-Type
+      maxAge: "24h"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: internal-tools-vs
+  namespace: istio-system
+spec:
+  hosts:
+  - "argocd.fintech.internal"
+  - "grafana.fintech.internal"
+  - "prometheus.fintech.internal"
+  - "alertmanager.fintech.internal"
+  - "vault.fintech.internal"
+  gateways:
+  - istio-system/fintech-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+      authority:
+        exact: "argocd.fintech.internal"
+    route:
+    - destination:
+        host: argocd-server.argocd.svc.cluster.local
+        port:
+          number: 443
+  - match:
+    - uri:
+        prefix: /
+      authority:
+        exact: "grafana.fintech.internal"
+    route:
+    - destination:
+        host: prometheus-grafana.monitoring.svc.cluster.local
+        port:
+          number: 80
+  - match:
+    - uri:
+        prefix: /
+      authority:
+        exact: "prometheus.fintech.internal"
+    route:
+    - destination:
+        host: prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local
+        port:
+          number: 9090
+  - match:
+    - uri:
+        prefix: /
+      authority:
+        exact: "alertmanager.fintech.internal"
+    route:
+    - destination:
+        host: prometheus-kube-prometheus-alertmanager.monitoring.svc.cluster.local
+        port:
+          number: 9093
+  - match:
+    - uri:
+        prefix: /
+      authority:
+        exact: "vault.fintech.internal"
+    route:
+    - destination:
+        host: vault.vault.svc.cluster.local
+        port:
+          number: 8200
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: internal-tools-authz
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  action: ALLOW
+  rules:
+  - to:
+    - operation:
+        hosts: 
+        - "argocd.fintech.internal"
+        - "grafana.fintech.internal"
+        - "prometheus.fintech.internal"
+        - "alertmanager.fintech.internal"
+        - "vault.fintech.internal"
+    from:
+    - source:
+        ipBlocks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: frontend-dr
+  namespace: frontend
+spec:
+  host: frontend-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+      http:
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: api-dr
+  namespace: backend
+spec:
+  host: api-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 3s
+      http:
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s 

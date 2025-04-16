@@ -1,0 +1,132 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: fintech-cluster
+  region: us-east-1
+  version: "1.29"
+  tags:
+    environment: production
+    project: fintech-app
+    compliance: pci-dss
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+    - metadata:
+        name: ebs-csi-controller-sa
+        namespace: kube-system
+      wellKnownPolicies:
+        ebsCSIController: true
+    - metadata:
+        name: cert-manager
+        namespace: cert-manager
+      wellKnownPolicies:
+        certManager: true
+    - metadata:
+        name: external-dns
+        namespace: external-dns
+      wellKnownPolicies:
+        externalDNS: true
+
+vpc:
+  id: "vpc-12345"
+  cidr: "10.0.0.0/16"
+  securityGroup: "sg-12345"
+  subnets:
+    private:
+      us-east-1a:
+        id: "subnet-1"
+        cidr: "10.0.1.0/24"
+      us-east-1b:
+        id: "subnet-2"
+        cidr: "10.0.2.0/24"
+      us-east-1c:
+        id: "subnet-3"
+        cidr: "10.0.3.0/24"
+    public:
+      us-east-1a:
+        id: "subnet-4"
+        cidr: "10.0.4.0/24"
+      us-east-1b:
+        id: "subnet-5"
+        cidr: "10.0.5.0/24"
+      us-east-1c:
+        id: "subnet-6"
+        cidr: "10.0.6.0/24"
+
+nodeGroups:
+  - name: app-nodes
+    instanceType: m5.large
+    minSize: 3
+    maxSize: 10
+    desiredCapacity: 3
+    volumeSize: 100
+    privateNetworking: true
+    ssh:
+      allow: false
+    labels:
+      role: app
+    tags:
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/fintech-cluster: "owned"
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        albIngress: true
+        cloudWatch: true
+        ebs: true
+    securityGroups:
+      attachIDs:
+        - sg-12345
+
+  - name: security-nodes
+    instanceType: m5.xlarge
+    minSize: 2
+    maxSize: 3
+    desiredCapacity: 2
+    volumeSize: 100
+    privateNetworking: true
+    ssh:
+      allow: false
+    labels:
+      role: security
+    taints:
+      - key: security
+        value: "true"
+        effect: NoSchedule
+    tags:
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/fintech-cluster: "owned"
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        cloudWatch: true
+        ebs: true
+    securityGroups:
+      attachIDs:
+        - sg-12345
+
+addons:
+  - name: vpc-cni
+    version: latest
+    attachPolicyARNs:
+      - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+  - name: aws-load-balancer-controller
+    version: latest
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"] 

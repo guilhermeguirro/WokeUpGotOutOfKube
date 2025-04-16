@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/instance: test
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: webserver
+    app.kubernetes.io/part-of: test-app
+    app.kubernetes.io/managed-by: kubectl
+    security.fintech.io/scanned: "true"
+  name: test-security-compliant
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-security-compliant
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: test-security-compliant
+        app.kubernetes.io/name: nginx
+        app.kubernetes.io/instance: test
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: webserver
+        app.kubernetes.io/part-of: test-app
+        app.kubernetes.io/managed-by: kubectl
+        security.fintech.io/scanned: "true"
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - image: nginx:latest
+        name: nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 101
+          runAsGroup: 101
+          capabilities:
+            drop:
+            - ALL
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+status: {}

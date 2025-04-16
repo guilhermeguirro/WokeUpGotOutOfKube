@@ -1,0 +1,7 @@
+# Este arquivo contém um comando para baixar e instalar os CRDs do ArgoCD
+# Não é um arquivo YAML de recursos, mas sim um script para download dos CRDs
+
+# Para instalar os CRDs do ArgoCD, execute:
+# kubectl apply -k https://github.com/argoproj/argo-cd/manifests/crds?ref=stable
+
+# Este comando deve ser executado antes de aplicar o arquivo install.yaml 

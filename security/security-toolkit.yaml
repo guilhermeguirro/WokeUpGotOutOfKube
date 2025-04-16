@@ -1,0 +1,200 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-tools
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: security-toolkit
+  namespace: security-tools
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: security-toolkit-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/exec", "pods/log"]
+  verbs: ["get", "list", "create"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: security-toolkit-binding
+subjects:
+- kind: ServiceAccount
+  name: security-toolkit
+  namespace: security-tools
+roleRef:
+  kind: ClusterRole
+  name: security-toolkit-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-toolkit-config
+  namespace: security-tools
+data:
+  incident-response.sh: |
+    #!/bin/bash
+    echo "Incident Response Toolkit Initialized"
+    echo "Available tools:"
+    echo " - trivy: Vulnerability scanner"
+    echo " - kube-hunter: Kubernetes penetration testing"
+    echo " - kube-bench: CIS benchmark checker"
+    echo " - netshoot: Network diagnostic tools"
+    echo " - amicontained: Container security checker"
+    echo " - audit-collector: Audit log collector"
+    
+    # Configuração básica de tools
+    alias list-pods="kubectl get pods --all-namespaces -o wide"
+    alias list-services="kubectl get services --all-namespaces"
+    alias list-nodes="kubectl get nodes -o wide"
+    alias scan-image="trivy image"
+    alias hunt-cluster="kube-hunter --remote"
+    alias bench-nodes="kube-bench node"
+    alias collect-logs="mkdir -p /evidence && kubectl logs \$1 > /evidence/\$1-logs.txt"
+    
+    # Função para escanear vulnerabilidades
+    scan_vulnerabilities() {
+      NAMESPACE=${1:-default}
+      echo "Escaneando vulnerabilidades em imagens do namespace $NAMESPACE..."
+      kubectl get pods -n $NAMESPACE -o jsonpath='{.items[*].spec.containers[*].image}' | tr -s '[[:space:]]' '\n' | sort | uniq | xargs -I {} sh -c "echo 'Escaneando {}...' && trivy image {}"
+    }
+    
+    # Função para investigar pod
+    investigate_pod() {
+      POD=$1
+      NAMESPACE=${2:-default}
+      echo "Investigando pod $POD no namespace $NAMESPACE..."
+      mkdir -p /evidence/$NAMESPACE/$POD
+      kubectl describe pod $POD -n $NAMESPACE > /evidence/$NAMESPACE/$POD/pod-info.txt
+      kubectl logs $POD -n $NAMESPACE > /evidence/$NAMESPACE/$POD/logs.txt
+      kubectl get pod $POD -n $NAMESPACE -o yaml > /evidence/$NAMESPACE/$POD/manifest.yaml
+      echo "Evidências salvas em /evidence/$NAMESPACE/$POD/"
+    }
+    
+    # Função para isolar namespace
+    isolate_namespace() {
+      NAMESPACE=$1
+      echo "Isolando namespace $NAMESPACE..."
+      cat <<EOF | kubectl apply -f -
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: default-deny-all
+      namespace: $NAMESPACE
+    spec:
+      podSelector: {}
+      policyTypes:
+      - Ingress
+      - Egress
+    EOF
+      echo "Namespace $NAMESPACE isolado. Toda a comunicação de entrada e saída está bloqueada."
+    }
+    
+    # Função para restaurar acesso
+    restore_namespace() {
+      NAMESPACE=$1
+      echo "Restaurando namespace $NAMESPACE..."
+      kubectl delete networkpolicy default-deny-all -n $NAMESPACE
+      echo "Isolamento removido do namespace $NAMESPACE."
+    }
+    
+    # Exportando funções
+    export -f scan_vulnerabilities
+    export -f investigate_pod
+    export -f isolate_namespace
+    export -f restore_namespace
+    
+    echo "Incident Response Toolkit carregado. Use as funções acima para responder a incidentes."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-toolkit
+  namespace: security-tools
+  labels:
+    app: security-toolkit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security-toolkit
+  template:
+    metadata:
+      labels:
+        app: security-toolkit
+    spec:
+      serviceAccountName: security-toolkit
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      containers:
+      - name: toolkit
+        image: ubuntu:22.04
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y curl wget jq tcpdump netcat dnsutils iputils-ping nmap python3-pip && \
+          curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && \
+          chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl && \
+          pip3 install kube-hunter && \
+          wget https://raw.githubusercontent.com/aquasecurity/kube-bench/main/job.yaml && \
+          mkdir -p /scripts && \
+          cp /config/incident-response.sh /scripts/incident-response.sh && \
+          chmod +x /scripts/incident-response.sh && \
+          echo "source /scripts/incident-response.sh" >> ~/.bashrc && \
+          mkdir -p /evidence && \
+          echo "Security toolkit ready. Execute 'kubectl exec -it $(hostname) -- /bin/bash' to access the tools." && \
+          while true; do sleep 3600; done
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+        - name: evidence-volume
+          mountPath: /evidence
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: config-volume
+        configMap:
+          name: security-toolkit-config
+      - name: evidence-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-toolkit-service
+  namespace: security-tools
+spec:
+  selector:
+    app: security-toolkit
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP 
